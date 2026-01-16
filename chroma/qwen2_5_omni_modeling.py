@@ -6,15 +6,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-# 先导入基础工具模块
-from sglang.utils import logger
 from transformers import PreTrainedModel, PretrainedConfig
-from sglang.srt.utils import add_prefix
 from transformers.activations import ACT2FN
 from transformers.cache_utils import Cache
+from transformers.modeling_outputs import CausalLMOutputWithPast
 
-# 导入不依赖 linear 的层
-from sglang.srt.layers.layernorm import RMSNorm
 from transformers.modeling_outputs import BaseModelOutput, BaseModelOutputWithPast
 from transformers.models.qwen2_5_vl.modeling_qwen2_5_vl import (
     Qwen2_5_VLMLP,
@@ -22,44 +18,33 @@ from transformers.models.qwen2_5_vl.modeling_qwen2_5_vl import (
     Qwen2_5_VisionRotaryEmbedding,
 )
 
-# === 修复 SGLang 循环导入问题 ===
-# 调整导入顺序：先导入不依赖 linear 的模块，避免循环依赖
-
-
-# 导入量化配置（可能有循环依赖，使用 try-except 包裹）
 try:
     from sglang.srt.layers.quantization import QuantizationConfig
 except ImportError as e:
-    # 如果导入失败，创建一个占位符类
     import warnings
 
-    warnings.warn(f"无法导入 QuantizationConfig: {e}，使用占位符")
+    warnings.warn(f"Can not import QuantizationConfig: {e}, use default config")
+
 
     class QuantizationConfig:
         pass
 
-
+from sglang.utils import logger
+from sglang.srt.utils import add_prefix
+from sglang.srt.layers.layernorm import RMSNorm
 from sglang.srt.models.qwen2 import Qwen2MLP, Qwen2Attention
 from sglang.srt.managers.mm_utils import (
     MultiModalityDataPaddingPatternMultimodalTokens,
     general_mm_embed_routine,
 )
 from sglang.srt.layers.attention.vision import VisionAttention
-from sglang.srt.layers.logits_processor import LogitsProcessor, LogitsProcessorOutput
-from sglang.srt.managers.schedule_batch import MultimodalInputs, MultimodalDataItem
-from sglang.srt.model_loader.weight_utils import default_weight_loader
-
-# 然后导入其他模块
-from sglang.srt.layers.vocab_parallel_embedding import (
-    ParallelLMHead,
-    VocabParallelEmbedding,
-)
 from sglang.srt.model_executor.forward_batch_info import ForwardBatch
+from sglang.srt.model_loader.weight_utils import default_weight_loader
+from sglang.srt.managers.schedule_batch import MultimodalInputs, MultimodalDataItem
+from sglang.srt.layers.logits_processor import LogitsProcessor, LogitsProcessorOutput
+from sglang.srt.layers.vocab_parallel_embedding import ParallelLMHead, VocabParallelEmbedding
 
 
-############################
-#      Start Thinker       #
-############################
 class Qwen2_5OmniAudioAttention(nn.Module):
     """Multi-headed attention from 'Attention Is All You Need' paper"""
 
@@ -79,7 +64,7 @@ class Qwen2_5OmniAudioAttention(nn.Module):
                 f"embed_dim must be divisible by num_heads (got `embed_dim`: {self.embed_dim}"
                 f" and `num_heads`: {self.num_heads})."
             )
-        self.scaling = self.head_dim**-0.5
+        self.scaling = self.head_dim ** -0.5
         self.is_decoder = False
         self.is_causal = False
 
@@ -120,9 +105,9 @@ class Qwen2_5OmniAudioAttention(nn.Module):
         )
         for i in range(1, len(cu_seqlens)):
             attention_mask[
-                ...,
-                cu_seqlens[i - 1] : cu_seqlens[i],
-                cu_seqlens[i - 1] : cu_seqlens[i],
+            ...,
+            cu_seqlens[i - 1]: cu_seqlens[i],
+            cu_seqlens[i - 1]: cu_seqlens[i],
             ] = 0
 
         attn_weights = attn_weights + attention_mask
@@ -262,7 +247,7 @@ class Qwen2_5OmniVisionBlock(nn.Module):
 class Qwen2_5OmniPatchMerger(nn.Module):
     def __init__(self, dim: int, context_dim: int, spatial_merge_size: int = 2) -> None:
         super().__init__()
-        self.hidden_size = context_dim * (spatial_merge_size**2)
+        self.hidden_size = context_dim * (spatial_merge_size ** 2)
         self.ln_q = RMSNorm(context_dim, eps=1e-6)
         self.mlp = nn.Sequential(
             nn.Linear(self.hidden_size, self.hidden_size),
@@ -556,7 +541,7 @@ class Qwen2_5OmniDecoderLayer(nn.Module):
         # Rotate half
         def rotate_half(x):
             x1 = x[..., : x.shape[-1] // 2]
-            x2 = x[..., x.shape[-1] // 2 :]
+            x2 = x[..., x.shape[-1] // 2:]
             return torch.cat((-x2, x1), dim=-1)
 
         q_embed = (q * cos) + (rotate_half(q) * sin)
@@ -719,7 +704,6 @@ class Qwen2_5OmniDecoderLayer(nn.Module):
         hidden_states = self.mlp(hidden_states)
         hidden_states = residual + hidden_states
 
-        # 恢复原始 3D 形状
         hidden_states = hidden_states.view(orig_shape)
 
         return hidden_states
@@ -734,8 +718,7 @@ class Qwen2_5OmniDecoderLayer(nn.Module):
         **kwargs,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]]:
         """
-        使用 PyTorch 原生注意力的前向传播，不依赖 SGLang 推理框架。
-        用于 Transformers 风格的前向传播。
+        Transformers style
 
         Args:
             hidden_states: (batch, seq_len, hidden_size)
@@ -756,11 +739,10 @@ class Qwen2_5OmniDecoderLayer(nn.Module):
         hidden_states = hidden_states_2d.view(batch_size, seq_len, -1)
 
         # Self attention using native PyTorch SDPA
-        # 从 SGLang 的 Qwen2Attention 获取权重
         qkv_proj = self.self_attn.qkv_proj
         o_proj = self.self_attn.o_proj
 
-        # 计算 QKV
+        # calculate QKV
         qkv_output = qkv_proj(hidden_states_2d)  # SGLang 可能返回元组 (output, bias)
         if isinstance(qkv_output, tuple):
             qkv = qkv_output[0]
@@ -769,8 +751,8 @@ class Qwen2_5OmniDecoderLayer(nn.Module):
         qkv = qkv.view(batch_size, seq_len, -1)
 
         q = qkv[..., : self.q_size]
-        k = qkv[..., self.q_size : self.q_size + self.kv_size]
-        v = qkv[..., self.q_size + self.kv_size :]
+        k = qkv[..., self.q_size: self.q_size + self.kv_size]
+        v = qkv[..., self.q_size + self.kv_size:]
 
         # Reshape for attention
         q = q.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
@@ -1014,8 +996,8 @@ class Qwen2_5OmniAudioEncoder(PreTrainedModel):
         padded_embed = nn.functional.gelu(self.conv2(padded_embed)).transpose(1, 2)
 
         padded_embed = padded_embed + self.positional_embedding.positional_embedding[
-            : padded_embed.shape[1], :
-        ].unsqueeze(0).to(padded_embed.dtype)
+                                      : padded_embed.shape[1], :
+                                      ].unsqueeze(0).to(padded_embed.dtype)
         hidden_states = padded_embed[padded_mask_after_cnn]
         cu_seqlens = torch.cat(
             (
@@ -1039,7 +1021,6 @@ class Qwen2_5OmniAudioEncoder(PreTrainedModel):
 
             hidden_states = layer_outputs[0]
 
-        # 确保 aftercnn_lens 是整数类型
         aftercnn_lens_int = [int(x) for x in aftercnn_lens.tolist()]
         hidden_states_list = hidden_states.split(aftercnn_lens_int, dim=0)
         token_audio_list = []
@@ -1110,21 +1091,21 @@ class Qwen2_5OmniThinkerForConditionalGeneration(nn.Module):
     @staticmethod
     def is_backend_compatible() -> bool:
         """
-        SGLang 需要的方法，用于检查模型是否与后端兼容。
+        compact SGLang
         """
         return True
 
     @classmethod
     def register_for_auto_class(cls, auto_class="AutoModel"):
         """
-        SGLang/Transformers 需要的方法，用于注册自动类。
+        for auto register class
         """
         pass
 
     @classmethod
     def _from_config(cls, config, **kwargs):
         """
-        Transformers 需要的方法，从配置创建模型实例。
+        for transformers
         """
         return cls(config, **kwargs)
 
@@ -1137,11 +1118,10 @@ class Qwen2_5OmniThinkerForConditionalGeneration(nn.Module):
     ):
         super().__init__()
 
+        # thinker_config
         if hasattr(config, "thinker_config"):
-            # 传入的是顶层配置，提取 thinker_config
             config = config.thinker_config
         else:
-            # 传入的已经是 thinker_config
             config = config
 
         self.config = config
@@ -1173,10 +1153,22 @@ class Qwen2_5OmniThinkerForConditionalGeneration(nn.Module):
         self.logits_processor = LogitsProcessor(config.text_config)
 
     def get_input_embeddings(self):
+        """
+        get input embeddings
+        Returns:
+
+        """
         return self.model.get_input_embeddings()
 
     def set_input_embeddings(self, value):
-        """设置输入嵌入层"""
+        """
+        set input embeddings
+        Args:
+            value:
+
+        Returns:
+
+        """
         self.model.embed_tokens = value
 
     def get_image_feature(self, items: List[MultimodalDataItem]) -> torch.Tensor:
@@ -1273,35 +1265,29 @@ class Qwen2_5OmniThinkerForConditionalGeneration(nn.Module):
         **kwargs,
     ):
         """
-        兼容 transformers 风格的 forward 方法
-
-        这个方法将 transformers 标准接口转换为 sglang 的接口，
-        使得可以在不修改 chroma 其他代码的情况下使用 sglang 的 thinker 实现。
+        compact transformers forward
 
         Args:
-            input_ids: 输入 token IDs
-            attention_mask: 注意力掩码
-            input_features: 音频特征
-            feature_attention_mask: 音频特征掩码
-            position_ids: 位置 IDs
+            input_ids: token IDs
+            attention_mask:
+            input_features:
+            feature_attention_mask:
+            position_ids:
             past_key_values: KV cache
-            inputs_embeds: 输入嵌入
-            labels: 标签（用于训练）
-            use_cache: 是否使用 cache
-            output_attentions: 是否输出注意力权重
-            output_hidden_states: 是否输出隐藏状态
-            return_dict: 是否返回字典格式
-            cache_position: cache 位置
-            pixel_values: 图像像素值
-            image_grid_thws: 图像网格尺寸
-            use_audio_in_video: 是否在视频中使用音频
+            inputs_embeds:
+            labels:
+            use_cache:
+            output_attentions:
+            output_hidden_states:
+            return_dict:
+            cache_position:
+            pixel_values:
+            image_grid_thws:
+            use_audio_in_video:
 
         Returns:
-            CausalLMOutputWithPast: transformers 标准输出格式
+            CausalLMOutputWithPast: standard transformers
         """
-        from transformers.modeling_outputs import CausalLMOutputWithPast
-
-        # 确定 batch size 和 sequence length
         if input_ids is not None:
             batch_size, seq_length = input_ids.shape
         elif inputs_embeds is not None:
@@ -1309,10 +1295,9 @@ class Qwen2_5OmniThinkerForConditionalGeneration(nn.Module):
         else:
             raise ValueError("You have to specify either input_ids or inputs_embeds")
 
-        # 是否使用 KV cache
         use_cache = bool(use_cache) if use_cache is not None else False
 
-        # 推断 past_len（仅支持 list[(k,v)] 这种 cache 形态）
+        # SGLang list[(k,v)]
         past_len = 0
         if (
             use_cache
@@ -1325,7 +1310,7 @@ class Qwen2_5OmniThinkerForConditionalGeneration(nn.Module):
             except Exception:
                 past_len = 0
 
-        # 创建 position_ids（如果没有提供）
+        # create position_ids
         if position_ids is None:
             if cache_position is not None:
                 # cache_position: (seq_len,) absolute positions for current tokens
@@ -1348,19 +1333,13 @@ class Qwen2_5OmniThinkerForConditionalGeneration(nn.Module):
                     .expand(batch_size, -1)
                 )
 
-        # 处理多模态输入
+        # process multimodal inputs
         if input_features is not None or pixel_values is not None:
-            # 如果有音频或图像输入，需要进行嵌入合并
-            # 这里需要创建包含多模态信息的 forward_batch
-            # 由于 sglang 的 ForwardBatch 比较复杂，这里做简化处理
-
-            # 获取文本嵌入
             if inputs_embeds is None and input_ids is not None:
                 inputs_embeds = self.model.embed_tokens(input_ids)
 
-            # 处理音频特征
+            # process audio feature
             if input_features is not None:
-                # 简化处理：直接编码音频
                 if feature_attention_mask is not None:
                     audio_feature_lengths = torch.sum(feature_attention_mask, dim=1)
                     input_features_flat = input_features.permute(0, 2, 1)[
@@ -1389,12 +1368,11 @@ class Qwen2_5OmniThinkerForConditionalGeneration(nn.Module):
                 )
                 audio_embeds = audio_outputs.last_hidden_state
 
-                # 合并音频嵌入到文本嵌入中
+                # merge audio embed into text embed
                 # 找到音频 token 的位置并替换
                 if input_ids is not None:
                     audio_token_mask = input_ids == self.config.audio_token_index
                     if audio_token_mask.any():
-                        # 简化处理：假设音频 token 是连续的
                         for batch_idx in range(batch_size):
                             audio_positions = torch.where(audio_token_mask[batch_idx])[
                                 0
@@ -1407,11 +1385,10 @@ class Qwen2_5OmniThinkerForConditionalGeneration(nn.Module):
                                     batch_idx, audio_positions[:audio_len]
                                 ] = audio_embeds[:audio_len]
 
-            # 处理图像特征（如果有）
+            # process image feature if necessary
             if pixel_values is not None and image_grid_thws is not None:
                 image_embeds = self.visual(pixel_values, grid_thw=image_grid_thws)
 
-                # 合并图像嵌入
                 if input_ids is not None:
                     image_token_mask = input_ids == self.config.image_token_index
                     if image_token_mask.any():
@@ -1427,16 +1404,14 @@ class Qwen2_5OmniThinkerForConditionalGeneration(nn.Module):
                                     batch_idx, image_positions[:image_len]
                                 ] = image_embeds[:image_len]
 
-            # 使用合并后的嵌入进行前向传播
             hidden_states = inputs_embeds
         else:
-            # 纯文本输入
+            # text ids
             if inputs_embeds is None:
                 hidden_states = self.model.embed_tokens(input_ids)
             else:
                 hidden_states = inputs_embeds
 
-        # 通过模型层 - 使用 forward_native 方法，不依赖 SGLang 推理框架
         new_past_key_values = [] if use_cache else None
         for layer_idx, decoder_layer in enumerate(self.model.layers):
             layer_past = None

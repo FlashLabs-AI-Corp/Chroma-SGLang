@@ -412,12 +412,6 @@ class ChromaDecoderForCausalLM(ChromaPreTrainedModel, GenerationMixin):
             
             if (indices >= max_embedding_index).any() or (indices < 0).any():
                 print(f"Error: indices out of bounds!")
-                print(f"  input_ids range: [{input_ids.min()}, {input_ids.max()}]")
-                print(f"  offset range: [{offset.min()}, {offset.max()}]")
-                print(f"  indices range: [{indices.min()}, {indices.max()}]")
-                print(f"  max_embedding_index: {max_embedding_index}")
-                print(f"  past_codebook_num: {past_codebook_num}")
-                print(f"  audio_num_codebooks: {self.config.audio_num_codebooks}")
             audio_ids_embed = self.audio_embedding.embed_audio_tokens(indices)
             inputs_embeds = (
                 torch.cat(

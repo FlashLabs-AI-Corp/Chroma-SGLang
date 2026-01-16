@@ -10,13 +10,12 @@ from transformers.modeling_rope_utils import rope_config_validation
 from transformers.processing_utils import (
     ImagesKwargs,
     ProcessingKwargs,
-    Unpack, 
+    Unpack,
     VideosKwargs,
 )
 from transformers.tokenization_utils_base import PreTokenizedInput, TextInput
 
 from sglang.srt.configs.utils import register_processor
-
 
 ImageInput = Union[
     PIL.Image.Image,
@@ -32,13 +31,13 @@ AudioInput = Union[
     List[np.ndarray],
 ]
 
-VideoInput = ImageInput  # 视频本质上是图像序列
+VideoInput = ImageInput
 
-# make_batched_videos 函数
 try:
     from transformers.video_utils import make_batched_videos
 except ImportError:
     from transformers.image_utils import make_batched_videos
+
 
 class Qwen2_5OmniVisionEncoderConfig(PretrainedConfig):
     r"""
@@ -1161,8 +1160,8 @@ class Qwen2_5OmniProcessor(ProcessorMixin):
                 "input_features"
             )  # rename input_features to prevent conflicts later on
             input_lengths = (
-                audio_inputs["feature_attention_mask"].sum(-1) - 1
-            ) // 2 + 1
+                                audio_inputs["feature_attention_mask"].sum(-1) - 1
+                            ) // 2 + 1
             audio_lengths = iter((input_lengths - 2) // 2 + 1)
         else:
             audio_inputs = {}
@@ -1228,7 +1227,7 @@ class Qwen2_5OmniProcessor(ProcessorMixin):
         seconds_per_chunk,
     ):
         # Extend mm token length
-        merge_length = self.image_processor.merge_size**2
+        merge_length = self.image_processor.merge_size ** 2
 
         processed_text = []
         for sample in text:
