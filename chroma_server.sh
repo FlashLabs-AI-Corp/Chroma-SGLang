@@ -4,8 +4,8 @@
 # Default values
 HOST="0.0.0.0"
 PORT=8000
-CHROMA_MODEL_PATH="/models/Qwencsm/Chroma/checkpoints/chroma_1121"
-BASE_QWEN_PATH="/models/Qwen2.5-Omni-3B"
+CHROMA_MODEL_PATH=""
+BASE_QWEN_PATH=""
 DP_SIZE=1
 WORKERS=1
 
@@ -68,6 +68,13 @@ echo "Chroma Model: $CHROMA_MODEL_PATH"
 echo "Base Qwen Model: $BASE_QWEN_PATH"
 echo "=========================================="
 
+# Validate required parameters
+if [ -z "$CHROMA_MODEL_PATH" ] || [ -z "$BASE_QWEN_PATH" ]; then
+    echo "Error: --chroma-model-path and --base-qwen-path are required"
+    echo "Use --help for usage information"
+    exit 1
+fi
+
 # Export environment variables
 export CHROMA_MODEL_PATH="$CHROMA_MODEL_PATH"
 export BASE_QWEN_PATH="$BASE_QWEN_PATH"
@@ -81,7 +88,7 @@ if [ $DP_SIZE -gt 1 ]; then
     torchrun \
         --nproc_per_node=$DP_SIZE \
         --master_addr=127.0.0.1 \
-        --master_port=29501 \
+        --master_port=29500 \
         api_server.py \
         --host "$HOST" \
         --port "$PORT" \

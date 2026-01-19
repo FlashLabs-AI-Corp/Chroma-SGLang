@@ -156,7 +156,7 @@ class ChromaModelManager:
         os.environ.setdefault("WORLD_SIZE", str(world_size))
         os.environ.setdefault("LOCAL_RANK", str(local_rank))
         os.environ.setdefault("MASTER_ADDR", "127.0.0.1")
-        os.environ.setdefault("MASTER_PORT", "29501")
+        os.environ.setdefault("MASTER_PORT", "29500")
         
         # 2. Initialize PyTorch distributed
         if not dist.is_initialized():
@@ -311,19 +311,35 @@ class ChromaModelManager:
     
     def audio_to_base64(self, audio_tensor: torch.Tensor, sample_rate: int = 24000, format: str = "wav") -> str:
         """Convert audio tensor to base64 encoded string"""
+        import tempfile
+        import soundfile as sf
+
         try:
             # Prepare audio tensor
             if audio_tensor.dim() == 1:
                 audio_tensor = audio_tensor.unsqueeze(0)
-            
-            # Save to buffer
-            buffer = io.BytesIO()
-            torchaudio.save(buffer, audio_tensor.cpu(), sample_rate, format=format)
-            buffer.seek(0)
-            
-            # Encode to base64
-            audio_base64 = base64.b64encode(buffer.read()).decode('utf-8')
-            return audio_base64
+
+            # Ensure audio is on CPU and convert to numpy
+            audio_numpy = audio_tensor.cpu().float().squeeze(0).numpy()
+
+            # Use temporary file to save audio (torchcodec backend doesn't support BytesIO)
+            with tempfile.NamedTemporaryFile(suffix=f'.{format}', delete=False) as tmp_file:
+                tmp_path = tmp_file.name
+
+            try:
+                # Save audio to temporary file using soundfile (more reliable)
+                sf.write(tmp_path, audio_numpy, sample_rate, format=format.upper())
+
+                # Read file and encode to base64
+                with open(tmp_path, 'rb') as f:
+                    audio_base64 = base64.b64encode(f.read()).decode('utf-8')
+
+                return audio_base64
+            finally:
+                # Clean up temporary file
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+
         except Exception as e:
             logger.error(f"Error converting audio to base64: {e}")
             raise
@@ -445,11 +461,14 @@ async def lifespan(app: FastAPI):
     
     # Startup
     logger.info("Starting Chroma API server...")
-    
-    # Get configuration from environment or use defaults
-    chroma_model_path = os.environ.get("CHROMA_MODEL_PATH", "/models/Qwencsm/Chroma/checkpoints/chroma_1121")
-    base_qwen_path = os.environ.get("BASE_QWEN_PATH", "/models/Qwen2.5-Omni-3B")
+
+    # Get configuration from environment (required)
+    chroma_model_path = os.environ.get("CHROMA_MODEL_PATH")
+    base_qwen_path = os.environ.get("BASE_QWEN_PATH")
     dp_size = int(os.environ.get("DP_SIZE", "1"))
+
+    if not chroma_model_path or not base_qwen_path:
+        raise ValueError("CHROMA_MODEL_PATH and BASE_QWEN_PATH environment variables must be set")
     
     config = ServerConfig(
         chroma_model_path=chroma_model_path,
@@ -504,12 +523,12 @@ async def list_models():
         "object": "list",
         "data": [
             {
-                "id": "chroma-1121",
+                "id": "chroma",
                 "object": "model",
                 "created": int(time.time()),
                 "owned_by": "chroma",
                 "permission": [],
-                "root": "chroma-1121",
+                "root": "chroma",
                 "parent": None,
             }
         ]
@@ -524,7 +543,7 @@ async def chat_completions(request: ChatCompletionRequest):
     Example request:
     ```json
     {
-        "model": "chroma-1121",
+        "model": "chroma",
         "messages": [
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": [{"type": "audio", "audio": "assets/question.wav"}]}
@@ -595,12 +614,10 @@ def main():
     parser = argparse.ArgumentParser(description="Chroma API Server")
     parser.add_argument("--host", type=str, default="0.0.0.0", help="Host to bind")
     parser.add_argument("--port", type=int, default=8000, help="Port to bind")
-    parser.add_argument("--chroma-model-path", type=str, 
-                       default="/models/Qwencsm/Chroma/checkpoints/chroma_1121",
-                       help="Path to Chroma model")
-    parser.add_argument("--base-qwen-path", type=str,
-                       default="/models/Qwen2.5-Omni-3B",
-                       help="Path to base Qwen model")
+    parser.add_argument("--chroma-model-path", type=str, required=True,
+                       help="Path to Chroma model (required)")
+    parser.add_argument("--base-qwen-path", type=str, required=True,
+                       help="Path to base Qwen model (required)")
     parser.add_argument("--dp-size", type=int, default=1,
                        help="Data parallel size")
     parser.add_argument("--workers", type=int, default=1,

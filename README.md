@@ -15,20 +15,14 @@ An **OpenAI-compatible FastAPI server** for the Chroma audio generation model, s
 
 ---
 
-## Installation
-
-```bash
-pip install -r requirements_api.txt
-```
-
----
-
 ## Quick Start
 
 ### Single-GPU Mode (Default)
 
 ```bash
-bash chroma_server.sh
+bash chroma_server.sh \
+  --chroma-model-path /path/to/chroma/model \
+  --base-qwen-path /path/to/qwen/model
 ```
 
 ---
@@ -37,10 +31,16 @@ bash chroma_server.sh
 
 ```bash
 # Use 2 GPUs for data parallelism
-bash chroma_server.sh --dp-size 2
+bash chroma_server.sh \
+  --chroma-model-path /path/to/chroma/model \
+  --base-qwen-path /path/to/qwen/model \
+  --dp-size 2
 
 # Use 4 GPUs for data parallelism
-bash chroma_server.sh --dp-size 4
+bash chroma_server.sh \
+  --chroma-model-path /path/to/chroma/model \
+  --base-qwen-path /path/to/qwen/model \
+  --dp-size 4
 ```
 
 ---
@@ -82,7 +82,7 @@ curl http://localhost:8000/v1/models
 curl -X POST http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "chroma-1121",
+    "model": "chroma",
     "messages": [
       {
         "role": "system",
@@ -124,7 +124,7 @@ headers = {"Content-Type": "application/json"}
 prompt_audio_base64 = load_audio_as_base64("assets/ref_audio.wav")
 
 payload = {
-    "model": "chroma-1121",
+    "model": "chroma",
     "messages": [
         {
             "role": "system",
@@ -170,7 +170,7 @@ client = OpenAI(
 )
 
 response = client.chat.completions.create(
-    model="chroma-1121",
+    model="chroma",
     messages=[
         {"role": "system", "content": "You are a helpful assistant."},
         {
@@ -215,7 +215,7 @@ Root endpoint returning basic server information.
   "object": "list",
   "data": [
     {
-      "id": "chroma-1121",
+      "id": "chroma",
       "object": "model",
       "created": 1234567890,
       "owned_by": "chroma"
@@ -249,7 +249,7 @@ Root endpoint returning basic server information.
   "id": "chatcmpl-1234567890",
   "object": "chat.completion",
   "created": 1234567890,
-  "model": "chroma-1121",
+  "model": "chroma",
   "choices": [
     {
       "index": 0,
@@ -275,14 +275,14 @@ Root endpoint returning basic server information.
 
 ### Command-Line Arguments
 
-| Argument | Description | Default |
-|--------|------------|---------|
-| `--host` | Bind address | `0.0.0.0` |
-| `--port` | Server port | `8000` |
-| `--chroma-model-path` | Chroma model path | `/models/Qwencsm/Chroma/checkpoints/chroma_1121` |
-| `--base-qwen-path` | Base Qwen model path | `/models/Qwen2.5-Omni-3B` |
-| `--dp-size` | Data parallel size | `1` |
-| `--workers` | Worker processes | `1` |
+| Argument | Description | Required | Default |
+|----------|-------------|----------|---------|
+| `--host` | Bind address | No | `0.0.0.0` |
+| `--port` | Server port | No | `8000` |
+| `--chroma-model-path` | Path to Chroma model | **Yes** | - |
+| `--base-qwen-path` | Path to base Qwen model | **Yes** | - |
+| `--dp-size` | Data parallel size | No | `1` |
+| `--workers` | Worker processes | No | `1` |
 
 ---
 
@@ -294,10 +294,16 @@ Data parallelism improves throughput for handling multiple concurrent requests:
 
 ```bash
 # 2 GPUs
-bash chroma_server.sh --dp-size 2
+bash chroma_server.sh \
+  --chroma-model-path /path/to/chroma/model \
+  --base-qwen-path /path/to/qwen/model \
+  --dp-size 2
 
 # 4 GPUs
-bash chroma_server.sh --dp-size 4
+bash chroma_server.sh \
+  --chroma-model-path /path/to/chroma/model \
+  --base-qwen-path /path/to/qwen/model \
+  --dp-size 4
 ```
 
 ---
@@ -307,7 +313,10 @@ bash chroma_server.sh --dp-size 4
 ### Single-GPU Inference (Recommended for 3B model)
 
 ```bash
-bash chroma_server.sh --dp-size 1
+bash chroma_server.sh \
+  --chroma-model-path /path/to/chroma/model \
+  --base-qwen-path /path/to/qwen/model \
+  --dp-size 1
 ```
 
 - Lowest latency  
@@ -319,7 +328,10 @@ bash chroma_server.sh --dp-size 1
 ### Multi-GPU Data Parallelism (For high concurrency)
 
 ```bash
-bash chroma_server.sh --dp-size 4
+bash chroma_server.sh \
+  --chroma-model-path /path/to/chroma/model \
+  --base-qwen-path /path/to/qwen/model \
+  --dp-size 4
 ```
 
 - Higher throughput  
@@ -340,8 +352,8 @@ bash chroma_server.sh --dp-size 4
 
 ### Distributed Launch Failure
 
-1. GPU count must be ≥ `dp_size`  
-2. Ensure port `29501` is not occupied  
+1. GPU count must be ≥ `dp_size`
+2. Ensure port `29500` is not occupied
 3. Verify NCCL installation  
 
 ---

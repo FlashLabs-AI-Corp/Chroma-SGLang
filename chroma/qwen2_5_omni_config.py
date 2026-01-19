@@ -1388,16 +1388,7 @@ class Qwen2_5OmniProcessor(ProcessorMixin):
     def apply_chat_template(self, conversations, chat_template=None, **kwargs):
         if isinstance(conversations[0], dict):
             conversations = [conversations]
-        for conversation in conversations:
-            if (
-                conversation[0]["role"] != "system"
-                or conversation[0]["content"][0]["text"]
-                != "You are Qwen, a virtual human developed by the Qwen Team, Alibaba Group, capable of perceiving auditory and visual inputs, as well as generating text and speech."
-            ):
-                logging.warning(
-                    "System prompt modified, audio output may not work as expected. "
-                    + "Audio output mode only works when using default system prompt 'You are Qwen, a virtual human developed by the Qwen Team, Alibaba Group, capable of perceiving auditory and visual inputs, as well as generating text and speech.'"
-                )
+
         return super().apply_chat_template(conversations, chat_template, **kwargs)
 
     @property
