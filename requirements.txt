@@ -1,0 +1,13 @@
+sglang==0.5.6.post2
+moshi==0.2.11
+transformers==4.57.1
+librosa==0.11.0
+audioread==3.1.0
+ffmpeg==6.1
+fastapi==0.128.0
+torch==2.9.1
+torch_memory_saver==0.0.9
+torchao==0.9.0
+torchaudio==2.9.1
+torchcodec==0.9.1
+torchvision==0.24.1

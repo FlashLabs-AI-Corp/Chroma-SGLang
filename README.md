@@ -15,7 +15,11 @@ An **OpenAI-compatible FastAPI server** for the Chroma audio generation model, s
 
 ---
 
-## Quick Start
+## Setup
+### Prequire
+```bash
+pip install -r requirements.txt
+```
 
 ### Single-GPU Mode (Default)
 
@@ -54,6 +58,12 @@ bash chroma_server.sh \
   --chroma-model-path /path/to/chroma/model \
   --base-qwen-path /path/to/qwen/model \
   --dp-size 1
+```
+
+## Quick Start
+```shell
+docker pull flashlabs/chroma:latest
+docker-compose up -d
 ```
 
 ---
