@@ -1,0 +1,25 @@
+services:
+  chroma-sgl:
+    image: flashlabs/chroma:latest
+    container_name: chroma_sgl_api
+    ports:
+      - "8000:8000"
+    volumes:
+      - /data/models:/models
+      - /data/app/distill/FlashAITTS:/app
+      - /usr/local/cuda-12.4:/usr/local/cuda # mount your own cuda path
+      - /usr/local/cuda-12.4/lib64:/usr/local/cuda/lib64
+      - /usr/local/cuda-12.4/include:/usr/local/cuda/include
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [ gpu ]
+    working_dir: /app/Chroma-SGLang
+    environment:
+      CHROMA_MODEL_PATH: "/models/Qwencsm/Chroma/checkpoints/chroma_1121" # chroma model path
+      BASE_QWEN_PATH: "/models/Qwen2.5-Omni-3B" # qwen2.5-omni model path
+      DP_SIZE: "1" # data parallel size
+    command: /opt/conda/bin/python -m uvicorn api_server:app --host 0.0.0.0 --port 8000 --workers 1
