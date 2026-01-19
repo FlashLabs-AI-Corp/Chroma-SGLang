@@ -1,11 +1,14 @@
-import io
+import av
+import base64
+import librosa
+import audioread
+import numpy as np
+from io import BytesIO
 from typing import Tuple, Union, Optional
 
-import numpy as np
 import torch
 import torchaudio
 from transformers import AutoProcessor
-from qwen_omni_utils import process_audio_info
 from transformers.processing_utils import AudioKwargs, ProcessingKwargs
 from transformers.models.qwen2_5_omni import Qwen2_5OmniProcessor
 from transformers.feature_extraction_utils import BatchFeature
@@ -14,6 +17,61 @@ try:
     from typing import Unpack
 except ImportError:
     from typing_extensions import Unpack
+
+
+def _check_if_video_has_audio(video_path):
+    container = av.open(video_path)
+    audio_streams = [stream for stream in container.streams if stream.type == "audio"]
+    if not audio_streams:
+        return False
+    return True
+
+
+def process_audio_info(conversations: list[dict] | list[list[dict]], use_audio_in_video: bool):
+    audios = []
+    if isinstance(conversations[0], dict):
+        conversations = [conversations]
+    for conversation in conversations:
+        for message in conversation:
+            if not isinstance(message["content"], list):
+                continue
+            for ele in message["content"]:
+                if ele["type"] == "audio":
+                    if "audio" in ele:
+                        path = ele["audio"]
+                        if isinstance(path, np.ndarray):
+                            if path.ndim > 1:
+                                raise ValueError("Support only mono audio")
+                            audios.append(path)
+                        elif path.startswith("data:audio"):
+                            _, base64_data = path.split("base64,", 1)
+                            data = base64.b64decode(base64_data)
+                            audios.append(librosa.load(BytesIO(data), sr=16000)[0])
+                        elif path.startswith("http://") or path.startswith("https://"):
+                            audios.append(librosa.load(audioread.ffdec.FFmpegAudioFile(path), sr=16000)[0])
+                        elif path.startswith("file://"):
+                            audios.append(librosa.load(path[len("file://"):], sr=16000)[0])
+                        else:
+                            audios.append(librosa.load(path, sr=16000)[0])
+                    else:
+                        raise ValueError("Unknown audio {}".format(ele))
+                if use_audio_in_video and ele["type"] == "video":
+                    if "video" in ele:
+                        path = ele["video"]
+                        assert _check_if_video_has_audio(
+                            path
+                        ), "Video must has audio track when use_audio_in_video=True"
+                        if path.startswith("http://") or path.startswith("https://"):
+                            audios.append(librosa.load(audioread.ffdec.FFmpegAudioFile(path), sr=16000)[0])
+                        elif path.startswith("file://"):
+                            audios.append(librosa.load(path[len("file://"):], sr=16000)[0])
+                        else:
+                            audios.append(librosa.load(path, sr=16000)[0])
+                    else:
+                        raise ValueError("Unknown video {}".format(ele))
+    if len(audios) == 0:
+        audios = None
+    return audios
 
 
 class ChromaAudioKwargs(AudioKwargs, total=False):
