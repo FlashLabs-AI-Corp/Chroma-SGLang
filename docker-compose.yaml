@@ -20,6 +20,5 @@ services:
     working_dir: /app/Chroma-SGLang
     environment:
       CHROMA_MODEL_PATH: "/models/Qwencsm/Chroma/checkpoints/chroma_1121" # chroma model path
-      BASE_QWEN_PATH: "/models/Qwen2.5-Omni-3B" # qwen2.5-omni model path
       DP_SIZE: "1" # data parallel size
     command: /opt/conda/bin/python -m uvicorn api_server:app --host 0.0.0.0 --port 8000 --workers 1
