@@ -1502,13 +1502,8 @@ class Qwen2_5OmniModel(nn.Module):
             quant_config=quant_config,
             prefix=add_prefix("thinker", prefix),
         )
-        self.has_talker = config.enable_audio_output
+        self.has_talker = False  # Talker is not yet supported
         self.speaker_map = {}
-
-        config.enable_audio_output = False
-        logger.info(f"Talker is not yet supported")
-        if config.enable_audio_output:
-            self.enable_talker()
 
     def pad_input_ids(self, input_ids: List[int], mm_inputs: MultimodalInputs):
         # Get all special token IDs
