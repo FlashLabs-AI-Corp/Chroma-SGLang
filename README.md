@@ -25,8 +25,7 @@ pip install -r requirements.txt
 
 ```bash
 bash chroma_server.sh \
-  --chroma-model-path /path/to/chroma/model \
-  --base-qwen-path /path/to/qwen/model
+  --chroma-model-path /path/to/chroma/model
 ```
 
 ---
@@ -37,13 +36,11 @@ bash chroma_server.sh \
 # Use 2 GPUs for data parallelism
 bash chroma_server.sh \
   --chroma-model-path /path/to/chroma/model \
-  --base-qwen-path /path/to/qwen/model \
   --dp-size 2
 
 # Use 4 GPUs for data parallelism
 bash chroma_server.sh \
   --chroma-model-path /path/to/chroma/model \
-  --base-qwen-path /path/to/qwen/model \
   --dp-size 4
 ```
 
@@ -56,7 +53,6 @@ bash chroma_server.sh \
   --host 0.0.0.0 \
   --port 8000 \
   --chroma-model-path /path/to/chroma/model \
-  --base-qwen-path /path/to/qwen/model \
   --dp-size 1
 ```
 
@@ -285,14 +281,13 @@ Root endpoint returning basic server information.
 
 ### Command-Line Arguments
 
-| Argument | Description | Required | Default |
-|----------|-------------|----------|---------|
-| `--host` | Bind address | No | `0.0.0.0` |
-| `--port` | Server port | No | `8000` |
-| `--chroma-model-path` | Path to Chroma model | **Yes** | - |
-| `--base-qwen-path` | Path to base Qwen model | **Yes** | - |
-| `--dp-size` | Data parallel size | No | `1` |
-| `--workers` | Worker processes | No | `1` |
+| Argument              | Description             | Required | Default   |
+|-----------------------|-------------------------|----------|-----------|
+| `--host`              | Bind address            | No       | `0.0.0.0` |
+| `--port`              | Server port             | No       | `8000`    |
+| `--chroma-model-path` | Path to Chroma model    | **Yes**  | -         |
+| `--dp-size`           | Data parallel size      | No       | `1`       |
+| `--workers`           | Worker processes        | No       | `1`       |
 
 ---
 
@@ -306,13 +301,11 @@ Data parallelism improves throughput for handling multiple concurrent requests:
 # 2 GPUs
 bash chroma_server.sh \
   --chroma-model-path /path/to/chroma/model \
-  --base-qwen-path /path/to/qwen/model \
   --dp-size 2
 
 # 4 GPUs
 bash chroma_server.sh \
   --chroma-model-path /path/to/chroma/model \
-  --base-qwen-path /path/to/qwen/model \
   --dp-size 4
 ```
 
@@ -325,13 +318,12 @@ bash chroma_server.sh \
 ```bash
 bash chroma_server.sh \
   --chroma-model-path /path/to/chroma/model \
-  --base-qwen-path /path/to/qwen/model \
   --dp-size 1
 ```
 
-- Lowest latency  
-- Simplest setup  
-- Ideal for low concurrency  
+- Lowest latency
+- Simplest setup
+- Ideal for low concurrency
 
 ---
 
@@ -340,7 +332,6 @@ bash chroma_server.sh \
 ```bash
 bash chroma_server.sh \
   --chroma-model-path /path/to/chroma/model \
-  --base-qwen-path /path/to/qwen/model \
   --dp-size 4
 ```
 

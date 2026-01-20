@@ -32,10 +32,10 @@ from sglang.srt.distributed.parallel_state import (
 )
 
 # Chroma imports
-from chroma.qwen2_5_omni_config import Qwen2_5OmniConfig
 from chroma.qwen2_5_omni_modeling import Qwen2_5OmniModel
 from chroma.modeling_chroma import ChromaForConditionalGeneration
 from chroma.processing_chroma import ChromaProcessor
+from chroma.configuration_chroma import ChromaConfig
 from safetensors.torch import safe_open
 
 import logging
@@ -64,7 +64,6 @@ class ServerConfig:
     def __init__(
         self,
         chroma_model_path: str,
-        base_qwen_path: str,
         dp_size: int = 1,
         host: str = "0.0.0.0",
         port: int = 8000,
@@ -73,7 +72,6 @@ class ServerConfig:
         default_prompt_text: str = "I have not... I'm so exhausted, I haven't slept in a very long time. It could be because... Well, I used our... Uh, I'm, I just use... This is what I use every day. I use our cleanser every day, I use serum in the morning and then the moistu- daily moisturizer. That's what I use every morning.",
     ):
         self.chroma_model_path = chroma_model_path
-        self.base_qwen_path = base_qwen_path
         self.dp_size = dp_size
         self.host = host
         self.port = port
@@ -229,39 +227,39 @@ class ChromaModelManager:
     def load_model(self):
         """Load Chroma model"""
         logger.info("Loading Chroma model...")
-        
+
         # Initialize distributed environment
         self.initialize_distributed()
-        
+
         # Patch parameter
         self.patch_parameter()
-        
-        # Load base Qwen config and model
-        sgl_cfg = Qwen2_5OmniConfig.from_pretrained(self.config.base_qwen_path)
-        sgl_model = Qwen2_5OmniModel(sgl_cfg, quant_config=None)
-        
+
+        # Load config directly from chroma model path
+        chroma_config = ChromaConfig.from_pretrained(self.config.chroma_model_path)
+        sgl_model = Qwen2_5OmniModel(chroma_config, quant_config=None)
+
         # Load Chroma model
         self.chroma_model = ChromaForConditionalGeneration.from_pretrained(
             self.config.chroma_model_path,
             torch_dtype=torch.bfloat16,
             trust_remote_code=True,
         )
-        
+
         self.chroma_model = self.chroma_model.to(self.device)
         self.chroma_model.eval()
-        
+
         # Load thinker weights
         sgl_model.load_weights(self.iter_thinker_weights(self.config.chroma_model_path))
         sgl_model = sgl_model.to(self.device).to(torch.bfloat16).eval()
         self.chroma_model.thinker = sgl_model.thinker
-        
+
         # Load processor
         self.processor = ChromaProcessor.from_pretrained(self.config.chroma_model_path)
         self.tokenizer = self.processor.tokenizer
-        
+
         if hasattr(self.processor.tokenizer, 'chat_template'):
             self.processor.chat_template = self.processor.tokenizer.chat_template
-        
+
         logger.info("Model loaded successfully")
     
     def prepare_conversation(self, messages: List[Message]) -> List[Dict]:
@@ -458,31 +456,29 @@ model_manager: Optional[ChromaModelManager] = None
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown"""
     global model_manager
-    
+
     # Startup
     logger.info("Starting Chroma API server...")
 
     # Get configuration from environment (required)
     chroma_model_path = os.environ.get("CHROMA_MODEL_PATH")
-    base_qwen_path = os.environ.get("BASE_QWEN_PATH")
     dp_size = int(os.environ.get("DP_SIZE", "1"))
 
-    if not chroma_model_path or not base_qwen_path:
-        raise ValueError("CHROMA_MODEL_PATH and BASE_QWEN_PATH environment variables must be set")
-    
+    if not chroma_model_path:
+        raise ValueError("CHROMA_MODEL_PATH environment variable must be set")
+
     config = ServerConfig(
         chroma_model_path=chroma_model_path,
-        base_qwen_path=base_qwen_path,
         dp_size=dp_size,
     )
-    
+
     model_manager = ChromaModelManager(config)
     model_manager.load_model()
-    
+
     logger.info(f"Server ready! DP_SIZE={dp_size}")
-    
+
     yield
-    
+
     # Shutdown
     logger.info("Shutting down...")
     if dist.is_initialized():
@@ -610,26 +606,23 @@ async def chat_completions(request: ChatCompletionRequest):
 def main():
     """Main entry point"""
     import argparse
-    
+
     parser = argparse.ArgumentParser(description="Chroma API Server")
     parser.add_argument("--host", type=str, default="0.0.0.0", help="Host to bind")
     parser.add_argument("--port", type=int, default=8000, help="Port to bind")
     parser.add_argument("--chroma-model-path", type=str, required=True,
                        help="Path to Chroma model (required)")
-    parser.add_argument("--base-qwen-path", type=str, required=True,
-                       help="Path to base Qwen model (required)")
     parser.add_argument("--dp-size", type=int, default=1,
                        help="Data parallel size")
     parser.add_argument("--workers", type=int, default=1,
                        help="Number of worker processes")
-    
+
     args = parser.parse_args()
-    
+
     # Set environment variables
     os.environ["CHROMA_MODEL_PATH"] = args.chroma_model_path
-    os.environ["BASE_QWEN_PATH"] = args.base_qwen_path
     os.environ["DP_SIZE"] = str(args.dp_size)
-    
+
     # Run server
     uvicorn.run(
         "api_server:app",
