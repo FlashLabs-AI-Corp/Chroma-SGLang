@@ -725,7 +725,12 @@ class ChromaForConditionalGeneration(ChromaPreTrainedModel, ChromaGenerationMixi
         Returns:
         """
 
-        audio_codes = self.codec_model.encode(input_values.unsqueeze(0).unsqueeze(0)).audio_codes
+        # Ensure input_values has the same dtype as codec_model
+        input_values_for_encode = input_values.unsqueeze(0).unsqueeze(0)
+        # Get the dtype from codec_model's first parameter
+        codec_dtype = next(self.codec_model.parameters()).dtype
+        input_values_for_encode = input_values_for_encode.to(codec_dtype)
+        audio_codes = self.codec_model.encode(input_values_for_encode).audio_codes
         audio_codes = audio_codes[
             :, : self.config.backbone_config.audio_num_codebooks, :
         ]
