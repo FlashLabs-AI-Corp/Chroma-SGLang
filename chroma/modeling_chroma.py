@@ -4,18 +4,8 @@ from dataclasses import fields, dataclass
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
-from moshi.models import MimiModel
 from transformers import MODEL_MAPPING, CONFIG_MAPPING, GenerationMixin, PreTrainedModel
-from moshi.modules import SEANetDecoder, SEANetEncoder, transformer
-from moshi.quantization import SplitResidualVectorQuantizer
 from transformers.utils import logging
-from moshi.models.loaders import (
-    FRAME_RATE,
-    SAMPLE_RATE,
-    _seanet_kwargs,
-    _quantizer_kwargs,
-    _transformer_kwargs,
-)
 from transformers.cache_utils import Cache
 from transformers.models.llama import LlamaConfig
 from transformers.modeling_outputs import (
@@ -24,6 +14,7 @@ from transformers.modeling_outputs import (
     BaseModelOutputWithPast,
 )
 from transformers.models.llama.modeling_llama import LlamaModel
+from transformers.models.mimi.modeling_mimi import MimiModel
 
 from .qwen2_5_omni_modeling import Qwen2_5OmniThinkerForConditionalGeneration
 from .generation_chroma import ChromaGenerationMixin, sample_topk
@@ -524,30 +515,6 @@ class ChromaDecoderForCausalLM(ChromaPreTrainedModel, GenerationMixin):
         return model_inputs
 
 
-def get_mimi(num_codebooks: int = 32) -> MimiModel:
-    """Return a pretrained Mimi model, by moshi"""
-    encoder = SEANetEncoder(**_seanet_kwargs)
-    decoder = SEANetDecoder(**_seanet_kwargs)
-    encoder_transformer = transformer.ProjectedTransformer(**_transformer_kwargs)
-    decoder_transformer = transformer.ProjectedTransformer(**_transformer_kwargs)
-    quantizer = SplitResidualVectorQuantizer(
-        **_quantizer_kwargs,
-    )
-    model = MimiModel(
-        encoder,
-        decoder,
-        quantizer,
-        channels=1,
-        sample_rate=SAMPLE_RATE,
-        frame_rate=FRAME_RATE,
-        encoder_frame_rate=SAMPLE_RATE / encoder.hop_length,
-        causal=True,
-        resample_method="conv",
-        encoder_transformer=encoder_transformer,
-        decoder_transformer=decoder_transformer,
-    )
-    model.set_num_codebooks(num_codebooks)
-    return model
 
 
 class ChromaForConditionalGeneration(ChromaPreTrainedModel, ChromaGenerationMixin):
@@ -567,7 +534,7 @@ class ChromaForConditionalGeneration(ChromaPreTrainedModel, ChromaGenerationMixi
         )
         self.backbone = ChromaBackboneForCausalLM._from_config(config.backbone_config)
         self.decoder = ChromaDecoderForCausalLM._from_config(config.decoder_config)
-        self.codec_model = get_mimi(config.audio_num_codebooks)
+        self.codec_model = MimiModel._from_config(config.codec_config)
 
         assert (
             self.backbone.config.audio_num_codebooks == config.audio_num_codebooks
@@ -758,7 +725,7 @@ class ChromaForConditionalGeneration(ChromaPreTrainedModel, ChromaGenerationMixi
         Returns:
         """
 
-        audio_codes = self.codec_model.encode(input_values.unsqueeze(0).unsqueeze(0))
+        audio_codes = self.codec_model.encode(input_values.unsqueeze(0).unsqueeze(0)).audio_codes
         audio_codes = audio_codes[
             :, : self.config.backbone_config.audio_num_codebooks, :
         ]
