@@ -431,7 +431,7 @@ class ChromaModelManager:
                 generated_d = generated_d.clamp(min=0, max=2047)
                 
                 output = self.chroma_model.codec_model.decode(generated_d)
-                wav = output.squeeze(0).squeeze(0)
+                wav = output.audio_values.squeeze(0).squeeze(0)
                 
                 result["audio_tensor"] = wav
                 result["audio_base64"] = self.audio_to_base64(wav, sample_rate=24000)
