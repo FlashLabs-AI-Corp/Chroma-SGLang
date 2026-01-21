@@ -140,6 +140,9 @@ class ChromaProcessor(Qwen2_5OmniProcessor):
                 f"prompt audio must be str, tensor or numpy, but got  {type(prompt_audio)}"
             )
 
+        # Add batch and channel dimensions to match expected shape [B, channels, audio_seq_len]
+        prompt_audio_tensor = prompt_audio_tensor.unsqueeze(0).unsqueeze(0)
+
         return BatchFeature(
             data={**inputs, **prompt_ids, "input_values": prompt_audio_tensor},
             tensor_type="pt",
