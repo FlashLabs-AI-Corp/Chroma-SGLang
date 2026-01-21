@@ -1,5 +1,6 @@
 from transformers import PretrainedConfig
 from transformers.utils import logging
+from transformers.models.mimi.configuration_mimi import MimiConfig
 
 from chroma.qwen2_5_omni_config import Qwen2_5OmniThinkerConfig
 
@@ -205,8 +206,13 @@ class ChromaConfig(PretrainedConfig):
                 audio_num_codebooks=audio_num_codebooks
             )
 
-        if codec_config is None:
-            codec_config = {"audio_num_codebooks": audio_num_codebooks}
+        # codec config (Mimi)
+        if isinstance(codec_config, dict):
+            codec_config = MimiConfig(**codec_config)
+        elif isinstance(codec_config, MimiConfig):
+            codec_config = codec_config
+        elif codec_config is None:
+            codec_config = MimiConfig(num_quantizers=audio_num_codebooks, frame_rate=12.5)
 
         self.thinker_config = thinker_config
         self.backbone_config = backbone_config
