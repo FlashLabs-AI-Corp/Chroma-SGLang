@@ -369,7 +369,7 @@ class ChromaGenerationMixin(GenerationMixin):
                     codec_decode_output = self.codec_model.decode(
                         audio_codes_batch.transpose(0, 1).unsqueeze(0)
                     )
-                    audio.append(codec_decode_output)
+                    audio.append(codec_decode_output.audio_values)
 
         if generate_returned_dict:
             return ChromaGenerateOutput(audio=audio, **generate_output)
