@@ -10,7 +10,7 @@ import torch
 import torchaudio
 from transformers import AutoProcessor
 from transformers.processing_utils import AudioKwargs, ProcessingKwargs
-from .qwen2_5_omni_modeling import Qwen2_5OmniProcessor
+from .qwen2_5_omni_config import Qwen2_5OmniProcessor
 from transformers.feature_extraction_utils import BatchFeature
 
 try:
